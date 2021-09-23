@@ -136,16 +136,51 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
 
 // associate a given bounding box with the keypoints it contains
-void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
+void clusterKptMatchesWithROI(BoundingBox &boundingBox,
+                              std::vector<cv::KeyPoint> &kptsPrev,
+                              std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
 {
     //check which keyPoint matches are inside of the area of interest of the bounding box
-    for(auto match = kptMatches.begin(); match != kptMatches.end(); match++)
+    //and do filtering accorindg to physical distance
+    //https://knowledge.udacity.com/questions/630004
+
+    std::vector<double> physicalDistances;
+    for(auto &matches : kptMatches)
     {
-       auto itCurr = kptsCurr.begin() + match->trainIdx;
+        cv::KeyPoint* c = &kptsCurr[matches.trainIdx];
+        cv::KeyPoint* p = &kptsPrev[matches.queryIdx];
 
-       if(boundingBox.roi.contains(itCurr->pt))
-            boundingBox.kptMatches.push_back(*match);
+        physicalDistances.emplace_back(sqrt(std::pow(c->pt.x - p->pt.x,2) + std::pow(c->pt.x - p->pt.x,2)));
+    }
 
+    double meanDist;
+    double stdDist;
+    //calc mean
+    for(auto &m : physicalDistances)
+        meanDist += m;
+
+    meanDist /= physicalDistances.size();
+    //calc standard deviation
+    for(auto &s : physicalDistances)
+        stdDist +=  (s - meanDist) * (s - meanDist);
+
+    stdDist /= physicalDistances.size();
+    stdDist = sqrt(stdDist);
+
+    for(size_t a = 0; a < kptMatches.size(); ++a)
+    {
+        const double dist = physicalDistances[a];
+
+        if(dist < meanDist + 2 * stdDist &&
+           dist > meanDist - 2 * stdDist)
+        {
+            if(boundingBox.roi.contains(kptsCurr[kptMatches[a].trainIdx].pt))
+            {
+                boundingBox.kptMatches.push_back(kptMatches[a]);
+                boundingBox.keypoints.push_back(kptsCurr[kptMatches[a].trainIdx]);
+            }
+
+        }
     }
 }
 
@@ -159,8 +194,8 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
     for(auto it0 = kptMatches.begin(); it0 != kptMatches.end() -1; ++it0)
     {
         // get current keypoint and its matched partner in the prev. frame
-        cv::KeyPoint kpOuterCurr = kptsCurr.at(it0->trainIdx);
-        cv::KeyPoint kpOuterPrev = kptsPrev.at(it0->queryIdx);
+        cv::KeyPoint OuterCurr = kptsCurr.at(it0->trainIdx);
+        cv::KeyPoint OuterPrev = kptsPrev.at(it0->queryIdx);
 
         for (auto it2 = kptMatches.begin() + 1; it2 != kptMatches.end(); ++it2)
         { // inner kpt.-loop
@@ -168,12 +203,12 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
             double minDist = 100.0; // min. required distance, taken from workspace. I think this is some kind of heuristic value
 
             // get next keypoint and its matched partner in the prev. frame
-            cv::KeyPoint kpInnerCurr = kptsCurr.at(it2->trainIdx);
-            cv::KeyPoint kpInnerPrev = kptsPrev.at(it2->queryIdx);
+            cv::KeyPoint InnerCurr = kptsCurr.at(it2->trainIdx);
+            cv::KeyPoint InnerPrev = kptsPrev.at(it2->queryIdx);
 
             // compute distances and distance ratios
-            double distCurr = cv::norm(kpOuterCurr.pt - kpInnerCurr.pt);
-            double distPrev = cv::norm(kpOuterPrev.pt - kpInnerPrev.pt);
+            double distCurr = cv::norm(OuterCurr.pt - InnerCurr.pt);
+            double distPrev = cv::norm(OuterPrev.pt - InnerPrev.pt);
 
             if (distPrev > std::numeric_limits<double>::epsilon() && distCurr >= minDist)  //https://knowledge.udacity.com/questions/668076
             { // avoid division by zero
@@ -185,6 +220,7 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
     }
 
     std::sort(distRatios.begin(), distRatios.end());
+
     if(!distRatios.empty())
     {
         const double medianDistRatio = distRatios[distRatios.size() / 2];
@@ -243,10 +279,11 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     //I define outliers the following everything which is greater or smaller than mean +/- standardDeviation
     //remove outliers, on current
     lidarPointsCurr.erase(std::remove_if(lidarPointsCurr.begin(),lidarPointsCurr.end(),
-                [meanCurrent,stdCurrent](LidarPoint& p){ return ((p.x > meanCurrent + 2 * stdCurrent) || (p.x < meanCurrent - 2 * stdCurrent)) ;}));
+                [meanCurrent,stdCurrent](LidarPoint& p){ return ((p.x > meanCurrent + 2 * stdCurrent) || (p.x < meanCurrent - 2 * stdCurrent));}
+    ),lidarPointsCurr.end());
     //remove outliers, on previous
     lidarPointsPrev.erase(std::remove_if(lidarPointsPrev.begin(),lidarPointsPrev.end(),
-                [meanPrev,stdPrev](LidarPoint& p){ return ((p.x > meanPrev + 2 * stdPrev) || (p.x < meanPrev - 2 * stdPrev)) ;}));
+                [meanPrev,stdPrev](LidarPoint& p){ return ((p.x > meanPrev + 2 * stdPrev) || (p.x < meanPrev - 2 * stdPrev)) ;}),lidarPointsPrev.end());
     //recalculate without outliers
     meanCurrent = 0.0;
     meanPrev = 0.0;

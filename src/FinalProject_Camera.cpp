@@ -73,7 +73,7 @@ int main(int argc, const char *argv[])
     double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for Lidar and camera
     int dataBufferSize = 2;       // no. of images which are held in memory (ring buffer) at the same time
     vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
-    bool bVis = false;            // visualize results
+    bool bVis = true;            // visualize results
 
     /*
         _____ ______ _______ _______ _____ _   _  _____  _____
@@ -83,8 +83,8 @@ int main(int argc, const char *argv[])
        ____) | |____   | |     | |   _| |_| |\  | |__| |____) |
       |_____/|______|  |_|     |_|  |_____|_| \_|\_____|_____/
     */
-        DETECTOR detectorType(DETECTOR::SIFT);
-        DESCRIPTOR descriptorType = DESCRIPTOR::BRISK;
+        DETECTOR detectorType(DETECTOR::FAST);
+        DESCRIPTOR descriptorType = DESCRIPTOR::BRIEF;
         DESCRIPTORFAMILY descriptorFamily = DESCRIPTORFAMILY::BIN;//SIFT DESCRIPTOR comes from HOG Family
 
         MATCHER matcherType = MATCHER::MAT_BF;        // MAT_BF, MAT_FLANN
@@ -149,7 +149,7 @@ int main(int argc, const char *argv[])
         clusterLidarWithROI((dataBuffer.end()-1)->boundingBoxes, (dataBuffer.end() - 1)->lidarPoints, shrinkFactor, P_rect_00, R_rect_00, RT);
 
         // Visualize 3D objects
-        bVis = false;
+        bVis = true;
         if(bVis)
         {
             show3DObjects((dataBuffer.end()-1)->boundingBoxes, cv::Size(4.0, 20.0), cv::Size(2000, 2000), true);
@@ -281,9 +281,14 @@ int main(int argc, const char *argv[])
                     //// TASK FP.3 -> assign enclosed keypoint matches to bounding box (implement -> clusterKptMatchesWithROI)
                     //// TASK FP.4 -> compute time-to-collision based on camera (implement -> computeTTCCamera)
                     double ttcCamera;
-                    clusterKptMatchesWithROI(*currBB, (dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->kptMatches);                    
-                    computeTTCCamera((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, currBB->kptMatches, sensorFrameRate, ttcCamera);
+                    clusterKptMatchesWithROI(*currBB, (dataBuffer.end() - 2)->keypoints,
+                                             (dataBuffer.end() - 1)->keypoints,
+                                             (dataBuffer.end() - 1)->kptMatches);
+                    computeTTCCamera((dataBuffer.end() - 2)->keypoints,
+                                     (dataBuffer.end() - 1)->keypoints,
+                                     currBB->kptMatches, sensorFrameRate, ttcCamera);
                     ttcsCam.push_back(ttcCamera);
+                    bVis = true;
                     //// EOF STUDENT ASSIGNMENT
 
                     if (bVis)
@@ -300,7 +305,7 @@ int main(int argc, const char *argv[])
                         cv::namedWindow(windowName, 4);
                         cv::imshow(windowName, visImg);
                         cout << "Press key to continue to next frame" << endl;
-                        //cv::waitKey(0);
+                        cv::waitKey(0);
                     }
                     bVis = false;
                     char str[200];
